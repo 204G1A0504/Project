@@ -1,0 +1,80 @@
+#include<LiquidCrystal.h>
+#include <SoftwareSerial.h>
+const int led = 12;
+const int lm35 = A1;
+const int turbidity = A0;
+char str[15];
+int temp1,i;
+LiquidCrystal lcd(2, 3, 4, 5, 6, 7);
+int f,turb,ph,tempertureC,t;
+SoftwareSerial ph1(8,9);
+float PH;
+void setup()
+{
+ Serial.begin(9600);
+ ph1.begin(9600);
+ pinMode(turbidity, INPUT);
+ pinMode(lm35, INPUT);
+ lcd.begin(16, 2);  // initializes the 16x2 LCD
+ lcd.setCursor(0,0);
+  lcd.print("WELCOME TO");
+  lcd.setCursor(0,1);
+  lcd.print("WATER QUALITY");
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("PH LEVELS CHECK.");
+ delay(1000);
+ welcomedisplay();
+
+}
+void loop()
+{
+   t = analogRead(lm35);
+  float voltage = t * (5.0 / 1024.0);
+  tempertureC=voltage * 100;
+  tempertureC = map(tempertureC,0,120,120,0);
+  //tempertureC = tempertureC - 30;
+  lcd.setCursor(0,1);        
+  lcd.print("T:");
+   lcd.print(tempertureC);
+  turb = analogRead(turbidity);
+  lcd.setCursor(0,0);
+  lcd.print("T=");
+  lcd.print(turb);
+  for(int i=1; i<=10; i++) {
+        String phdata = ph1.readStringUntil(':');
+        //Serial.println(phdata);
+        if(phdata != ""){
+         String ph = ph1.readStringUntil('$');
+        // Serial.println(ph);
+         float phvalue=ph.toFloat();
+         PH = phvalue;
+        Serial.println();
+        // Serial.println("PH Value");
+         //Serial.println(phvalue);
+         if(phvalue>15)
+         {
+         Serial.println("MINARAL "); 
+         }
+         if(phvalue<9)
+         {
+         Serial.println("DURTY"); 
+         }
+        }
+    }
+  lcd.print(" PH=");
+  lcd.print(PH);
+  lcd.print("  ");
+  delay(500);
+  
+}
+void welcomedisplay()
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("PH VALUE: TB:  ");
+  lcd.setCursor(0,1);
+   lcd.print("T: ");
+  
+}

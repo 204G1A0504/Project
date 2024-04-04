@@ -1,0 +1,253 @@
+#include<LiquidCrystal.h>
+#include <SoftwareSerial.h>
+#include <Wire.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+const int led = 7;
+const int bz = 4;
+const int turbidity = A1;
+#define ONE_WIRE_BUS A0 // Data wire is conntec to the Arduino digital pin A1
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+char str[15];
+int temp1,i;
+LiquidCrystal lcd(13,12,11,10,9,8);
+int cnt,tds,turb,ph,turb1;
+float PH;
+float phvalue;
+#define DEBUG 1 
+SoftwareSerial esp8266Module(2, 3);               // RX, TX
+String network = "project";                         
+String password = "project1234";                 
+#define IP "184.106.153.149"                        // IP address of thingspeak.com
+String GET = "GET /update?key=4K4K3V1SOP6NMBV5"; 
+int n=0,cl =0;
+void setup()
+{
+ Serial.begin(9600);
+ pinMode(led,OUTPUT);
+ pinMode(bz,OUTPUT);
+ pinMode(turbidity, INPUT);
+ lcd.begin(16, 2);  // initializes the 16x2 LCD
+ lcd.setCursor(0,0);
+  lcd.print("WELCOME TO");
+  lcd.setCursor(0,1);
+  lcd.print("WATER QUALITY");
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("PH LEVELS CHECK.");
+  lcd.setCursor(0,1);
+  lcd.print("PLZ INSORT SIM");
+  delay(1000);
+  lcd.clear();
+  gsm_init();
+ welcomedisplay();
+ esp8266Module.begin(115200);                       
+ setupEsp8266();
+ sensors.begin();
+ }
+void loop()
+{
+  turb = analogRead(turbidity);
+  turb1 = turb/50;
+  lcd.setCursor(0,0);
+  lcd.print("TB:");
+  lcd.print(turb1);
+  lcd.print("  ");
+  for(int i=1; i<=10; i++) {
+        String phdata = Serial.readStringUntil(':');
+        //Serial.println(phdata);
+        if(phdata != ""){
+         String ph = Serial.readStringUntil('$');
+        // Serial.println(ph);
+          phvalue=ph.toFloat();
+         PH = phvalue;
+       //  Serial.println();
+        // Serial.println("PH Value");
+         //Serial.println(phvalue);
+          lcd.setCursor(8,0);
+          lcd.print("PH:");
+          lcd.print(phvalue);
+          lcd.print("  ");
+        }
+      }
+         if(((phvalue > 9) || (phvalue < 6)) && (turb1 > 17) ) 
+         {
+          digitalWrite(bz,HIGH);
+         //String sms = "PH = " + ph + ",OBNORMAL" + ",TURBIDITY = "+ turb + "\r\n";
+         send_sms("DIRTY WATER");
+         }
+         if(((phvalue > 6) || (phvalue < 9)) && ((turb1 > 0) || (turb1 < 16)) ) 
+         {
+        // String sms = "PH = "+ ph + ",NORMAL" + "TURBIDITY = "+ turb + "\r\n"; 
+        send_sms("MINERAL");
+        digitalWrite(bz,LOW);
+         }
+  sensors.requestTemperatures(); 
+  lcd.setCursor(0,1);
+  lcd.print("T:");
+  lcd.print(sensors.getTempCByIndex(0));
+  lcd.print("Dg, ");
+  lcd.print(sensors.getTempFByIndex(0));
+  lcd.print("Fh ");
+  delay(500);
+  cl =cl + 1;
+  Serial.println(cl);
+  if(cl >= 10)
+  {
+  lcd.setCursor(14,1);
+  lcd.print("UP");
+  updateTemp(String(phvalue),String(turb1), String(sensors.getTempCByIndex(0)));
+  cl=0;
+  }
+}
+void welcomedisplay()
+{
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("TB:     PH: ");
+  lcd.setCursor(0,0);
+  lcd.print("T:      ");
+}
+void setupEsp8266()                                   
+{
+    esp8266Module.flush();
+    esp8266Module.println(F("AT+RST"));
+    delay(7000);
+    if (esp8266Module.find("OK"))
+    {
+      if(DEBUG){
+       // Serial.println("Found OK");
+       // Serial.println("Changing espmode");
+      }  
+      esp8266Module.flush();
+      changingMode();
+      delay(5000);
+      esp8266Module.flush();
+      connectToWiFi();
+    }
+    else
+    {
+      if(DEBUG){
+       // Serial.println("OK not found");
+      }
+    }
+}
+bool changingMode()
+{
+    esp8266Module.println(F("AT+CWMODE=1"));
+    if (esp8266Module.find("OK"))
+    {
+      if(DEBUG){
+       // Serial.println("Mode changed");
+      }  
+      return true;
+    }
+    else if(esp8266Module.find("NO CHANGE")){
+      if(DEBUG){
+       // Serial.println("Already in mode 1");
+      }  
+      return true;
+    }
+    else
+    {
+      if(DEBUG){
+       // Serial.println("Error while changing mode");
+      }  
+      return false;
+    }
+}
+bool connectToWiFi()
+{
+  if(DEBUG){
+    //Serial.println("inside connectToWiFi");
+  }  
+  String cmd = F("AT+CWJAP=\"");
+  cmd += network;
+  cmd += F("\",\"");
+  cmd += password;
+  cmd += F("\"");
+  esp8266Module.println(cmd);
+  delay(15000);
+  
+  if (esp8266Module.find("OK"))
+  {
+    if(DEBUG){
+    //  Serial.println("Connected to Access Point");
+    }  
+    return true;
+  }
+  else
+  {
+    if(DEBUG){
+     // Serial.println("Could not connect to Access Point");
+    }  
+    return false;
+  }
+}
+void updateTemp(String Field1,String Field2,String Field3)
+{  
+  String cmd = "AT+CIPSTART=\"TCP\",\"";
+  cmd += IP;
+  cmd += "\",80";
+  esp8266Module.println(cmd);
+  delay(3000);
+  if(esp8266Module.find("Error")){
+    if(DEBUG){
+     // Serial.println("ERROR while SENDING");
+    }  
+    return;
+  }
+  cmd = GET + "&field1=" + Field1 + "&field2=" + Field2 + "&field3=" + Field3 + "\r\n";
+  esp8266Module.print("AT+CIPSEND=");
+  esp8266Module.println(cmd.length());
+  delay(13000);
+  if(esp8266Module.find(">"))
+  {
+    esp8266Module.print(cmd);
+    if(DEBUG){
+     // Serial.println("Data sent");
+    }
+  }else
+  {
+    esp8266Module.println("AT+CIPCLOSE");
+    if(DEBUG){
+      //Serial.println("Connection closed");
+    }  
+  }
+}
+void gsm_init()
+{
+  esp8266Module.println("AT");
+  delay(500);
+  esp8266Module.println("AT+CNMI=2,2,0,0,0");
+  delay(500);
+  esp8266Module.println("AT+CMGF=1");
+  delay(1000);
+  esp8266Module.println("AT+CMGF=1");
+}
+void send_sms(String str)//send_sms(char* str)
+{
+   Serial.println("AT");
+   //Serial.println("AT");
+    delay(500);
+    Serial.println("AT+CMGF=1");
+    delay(500);
+    Serial.println("AT+CMGS=\"+917981837550\"\r"); // Replace x with mobile number917892606752
+    delay(1000);
+    /*Serial.println("TROUBLE AT https://www.google.com/maps/place/17.3951,78.4735"); // STALEY COLLEGE
+    Serial.println("TROUBLE AT https://www.google.com/maps/place/17.4598,78.5569"); // HOME
+    Serial.print("NEAR TO THE BORDER  AT https://www.google.com/maps/place/14.677597,77.602543");
+    Serial.print(gps.location.lat(), 6);  
+    Serial.print(",");
+    Serial.println(gps.location.lng(), 6);*/
+    Serial.println(str);
+    delay(1000);
+    delay(1000);
+    //Serial.println("");
+    delay(100);
+    Serial.println((char)26); // ASCII code of CTRL+Z
+    delay(1000);
+}
